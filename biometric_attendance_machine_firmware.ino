@@ -69,6 +69,7 @@ unsigned long prevMillis = 0;
 uint8_t bluetoothConnected = 0;
 uint8_t bluetoothAliveCounter = 0;
 uint8_t wifiConfigured=0;
+uint8_t bleDisabled = 0;
 
 //device runtime states
 uint8_t mqttConnectionIndicated = 0;
@@ -195,7 +196,7 @@ class WiFiConfigBLEServerCallbacks: public BLEServerCallbacks {
   }
 
   void onDisconnect(BLEServer *server) {
-    ESP.restart();
+      ESP.restart();
   }
 };
 
@@ -361,7 +362,7 @@ uint8_t takeFingerPrint() {
 }
 
 void mqttMessageHandler(char *topic, byte *payload,unsigned int length) {
-  char jsonBuffer[1024];
+  char jsonBuffer[2048];
   memcpy(jsonBuffer,payload,length);
   jsonBuffer[length]='\0';
 
@@ -375,6 +376,7 @@ void mqttMessageHandler(char *topic, byte *payload,unsigned int length) {
     serverFaultIndicater();
     return;
   }
+
 
   const char *errorStatus = json["est"];
 
@@ -493,8 +495,6 @@ void enableBLEStack() {
 }
 
 void disableBLEStack() {
-  pServer->getAdvertising()->stop();
-  pService->stop();
   BLEDevice::deinit(true);
   bluetoothConnected=0;
 }
@@ -532,6 +532,7 @@ void connectToBroker() {
   mqtt.setServer(MQTT_BROKER_HOST,MQTT_BROKER_PORT);
   mqtt.setCallback(mqttMessageHandler);
   mqtt.setKeepAlive(MQTT_KEEP_ALIVE_INTERVAL);
+  mqtt.setBufferSize(1024);
 
   while( WiFi.status() == WL_CONNECTED && !mqtt.connected() && timeOutCounter > 0) {
     if(bluetoothConnected) {
@@ -553,7 +554,7 @@ void connectToBroker() {
 
 void setup() {
   // // put your setup code here, to run once:
-  Serial.begin(9600);
+  // Serial.begin(9600);
 
   //digital pins setup
   pinMode(NET_LED_PIN,OUTPUT);
@@ -572,6 +573,7 @@ void setup() {
     controllerFaultIndicater();
   }
 
+  serialPort.begin(57600, SERIAL_8N1, 16, 17); // important set the baudrate for the serial port
   finger.begin(FINGERPRINT_SENSOR_COMM_BD_RATE);
   
   if(!finger.verifyPassword()) {
@@ -633,9 +635,10 @@ void loop() {
     }
   }
 
-  if(bluetoothAliveCounter > BLUETOOTH_MAX_ALIVE_TIME ) {
+  if(!bleDisabled && bluetoothAliveCounter > BLUETOOTH_MAX_ALIVE_TIME ) {
     //disable the complete BLE 
     disableBLEStack();
+    bleDisabled=1;
   }
 
   if(wifiConfigured) {
@@ -700,6 +703,7 @@ void loop() {
    }
 
   mqtt.loop();
-  printFreeMemory();
+  // printFreeMemory();
+  // Serial.println(bluetoothAliveCounter);
   vTaskDelay(pdMS_TO_TICKS(DELAY_PER_ITERATION));
 }
